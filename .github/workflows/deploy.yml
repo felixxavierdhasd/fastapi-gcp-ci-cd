@@ -65,5 +65,8 @@ jobs:
             pkill -f uvicorn || true
             sleep 2
 
-            nohup venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 < /dev/null &
-            disown
+            setsid venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 < /dev/null &
+            
+            sleep 2
+            echo "Deployment complete. Checking if uvicorn is running..."
+            ps aux | grep uvicorn | grep -v grep || echo "Warning: uvicorn process not found"
