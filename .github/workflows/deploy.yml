@@ -1,4 +1,4 @@
-name: Deploy FastAPI to GCP
+name: Deploy FastAPI to GCP VM
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    steps:              # <-- steps is a list
+    steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
@@ -29,7 +29,7 @@ jobs:
           echo "vm_ip=$EXTERNAL_IP" >> $GITHUB_OUTPUT
           echo "Retrieved VM IP: $EXTERNAL_IP"
 
-      - name: Deploy to VM        # <-- this - name: is valid because it's inside steps
+      - name: Deploy to VM
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ steps.get-ip.outputs.vm_ip }}
@@ -38,12 +38,13 @@ jobs:
           port: 22
           timeout: 30s
           command_timeout: 10m
-          proxy_port: 22
-          proxy_timeout: 30s
           script: |
+            set -e
+            echo "=== Starting deployment ==="
+            
             mkdir -p ~/fastapi-demo-app
             cd ~/fastapi-demo-app || exit 1
-
+            
             if [ ! -d ".git" ]; then
               git init
               git remote add origin https://github.com/felixxavierdhasd/fastapi-gcp-ci-cd.git
@@ -53,20 +54,35 @@ jobs:
             
             git fetch origin
             git reset --hard origin/main
-
+            echo "✓ Code updated"
+            
             if [ ! -d "venv" ]; then
               python3 -m venv venv || exit 1
             fi
+            
             source venv/bin/activate || exit 1
-
+            echo "✓ Virtual environment activated"
+            
             pip install --upgrade pip
             pip install -r requirements.txt || exit 1
-
-            pkill -f uvicorn || true
-            sleep 2
-
-            setsid venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 < /dev/null &
+            echo "✓ Dependencies installed"
             
-            sleep 2
-            echo "Deployment complete. Checking if uvicorn is running..."
-            ps aux | grep uvicorn | grep -v grep || echo "Warning: uvicorn process not found"
+            pkill -f "uvicorn app.main:app" || true
+            sleep 3
+            
+            echo "Starting uvicorn..."
+            nohup python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
+            APP_PID=$!
+            echo "Started with PID: $APP_PID"
+            
+            sleep 3
+            
+            if ps -p $APP_PID > /dev/null; then
+              echo "✓ Uvicorn is running (PID: $APP_PID)"
+            else
+              echo "✗ Failed to start uvicorn"
+              tail -20 app.log
+              exit 1
+            fi
+            
+            echo "=== Deployment complete ==="
