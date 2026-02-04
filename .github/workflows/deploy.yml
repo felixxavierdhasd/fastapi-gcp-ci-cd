@@ -71,14 +71,13 @@ jobs:
             sleep 3
             
             echo "Starting uvicorn..."
-            nohup python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
-            APP_PID=$!
-            echo "Started with PID: $APP_PID"
+            (nohup python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 < /dev/null &) && disown -a
             
             sleep 3
             
-            if ps -p $APP_PID > /dev/null; then
-              echo "✓ Uvicorn is running (PID: $APP_PID)"
+            if pgrep -f "uvicorn app.main:app" > /dev/null; then
+              RUNNING_PID=$(pgrep -f "uvicorn app.main:app")
+              echo "✓ Uvicorn is running (PID: $RUNNING_PID)"
             else
               echo "✗ Failed to start uvicorn"
               tail -20 app.log
