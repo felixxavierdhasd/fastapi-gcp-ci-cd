@@ -41,18 +41,32 @@ jobs:
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           script: |
+            # Navigate to app directory
+            mkdir -p ~/fastapi-demo-app
             cd ~/fastapi-demo-app || exit 1
 
+            # Clone or pull the latest code
             if [ ! -d ".git" ]; then
-              git clone https://github.com/<your-username>/fastapi-gcp-ci-cd.git .
+              git clone https://github.com/felixxavierdhasd/fastapi-gcp-ci-cd.git .
             else
               git pull origin main
             fi
 
-            pip3 install --user -r requirements.txt
+            # Set up Python virtual environment
+            if [ ! -d "venv" ]; then
+              python3 -m venv venv
+            fi
+            source venv/bin/activate
+
+            # Install dependencies inside venv
+            pip install --upgrade pip
+            pip install -r requirements.txt
+
+            # Kill any existing uvicorn process
             pkill -f uvicorn || true
 
-            nohup ~/.local/bin/uvicorn app.main:app \
+            # Start FastAPI with uvicorn in background
+            nohup venv/bin/uvicorn app.main:app \
               --host 0.0.0.0 \
               --port 8000 \
               > app.log 2>&1 &
