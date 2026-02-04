@@ -8,8 +8,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Authenticate to Google Cloud
@@ -17,17 +18,18 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-      - name: Set up Cloud SDK
+      - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Get VM External IP
         id: get-ip
         run: |
-          EXTERNAL_IP=$(gcloud compute instances describe ${{ secrets.VM_NAME }} \
+          IP=$(gcloud compute instances describe ${{ secrets.VM_NAME }} \
             --zone=${{ secrets.VM_ZONE }} \
             --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
-          echo "vm_ip=$EXTERNAL_IP" >> $GITHUB_OUTPUT
-          echo "Retrieved VM IP: $EXTERNAL_IP"
+          echo "vm_ip=$IP" >> $GITHUB_OUTPUT
 
       - name: Deploy to VM
         uses: appleboy/ssh-action@v1.0.3
@@ -40,48 +42,51 @@ jobs:
           command_timeout: 10m
           script: |
             set -e
-            echo "=== Starting deployment ==="
-            
-            mkdir -p ~/fastapi-demo-app
-            cd ~/fastapi-demo-app || exit 1
-            
+
+            APP_DIR="/home/${USER}/fastapi-demo-app"
+            SERVICE_NAME="fastapi"
+            SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+            REPO_URL="https://github.com/felixxavierdhasd/fastapi-gcp-ci-cd.git"
+
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
+
             if [ ! -d ".git" ]; then
               git init
-              git remote add origin https://github.com/felixxavierdhasd/fastapi-gcp-ci-cd.git
+              git remote add origin "$REPO_URL"
             else
-              git remote set-url origin https://github.com/felixxavierdhasd/fastapi-gcp-ci-cd.git
+              git remote set-url origin "$REPO_URL"
             fi
-            
+
             git fetch origin
             git reset --hard origin/main
-            echo "✓ Code updated"
-            
+
             if [ ! -d "venv" ]; then
-              python3 -m venv venv || exit 1
+              python3 -m venv venv
             fi
-            
-            source venv/bin/activate || exit 1
-            echo "✓ Virtual environment activated"
-            
+
+            source venv/bin/activate
             pip install --upgrade pip
-            pip install -r requirements.txt || exit 1
-            echo "✓ Dependencies installed"
-            
-            pkill -f "uvicorn app.main:app" || true
-            sleep 3
-            
-            echo "Starting uvicorn..."
-            (nohup python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 < /dev/null &) && disown -a
-            
-            sleep 3
-            
-            if pgrep -f "uvicorn app.main:app" > /dev/null; then
-              RUNNING_PID=$(pgrep -f "uvicorn app.main:app")
-              echo "✓ Uvicorn is running (PID: $RUNNING_PID)"
-            else
-              echo "✗ Failed to start uvicorn"
-              tail -20 app.log
-              exit 1
-            fi
-            
-            echo "=== Deployment complete ==="
+            pip install -r requirements.txt
+
+            sudo tee "$SERVICE_FILE" > /dev/null <<EOF
+            [Unit]
+            Description=FastAPI Application
+            After=network.target
+
+            [Service]
+            User=${USER}
+            WorkingDirectory=${APP_DIR}
+            ExecStart=${APP_DIR}/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+            Restart=always
+            RestartSec=5
+            Environment=PATH=${APP_DIR}/venv/bin
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+
+            sudo systemctl daemon-reload
+            sudo systemctl enable fastapi
+            sudo systemctl restart fastapi
+            sudo systemctl status fastapi --no-pager
