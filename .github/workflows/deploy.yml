@@ -10,21 +10,23 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout repo (only needed for access to secrets/files if any)
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 🔐 Authenticate to GCP
+      # 2️⃣ Authenticate to GCP
       - name: GCP Auth
         uses: google-github-actions/auth@v2
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      # 3️⃣ Setup gcloud CLI
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      # 📡 Fetch VM External IP dynamically
+      # 4️⃣ Get VM external IP dynamically
       - name: Get VM IP
         id: vmip
         run: |
@@ -33,39 +35,42 @@ jobs:
             --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
           echo "VM_IP=$IP" >> $GITHUB_ENV
 
-      # 🚀 Deploy via SSH
+      # 5️⃣ Deploy FastAPI to VM via SSH
       - name: Deploy to VM
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ env.VM_IP }}
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
+          port: 22
+          timeout: 30s
+          command_timeout: 10m
           script: |
-            # Navigate to app directory
+            # Ensure app directory exists
             mkdir -p ~/fastapi-demo-app
             cd ~/fastapi-demo-app || exit 1
 
-            # Clone or pull the latest code
+            # Clone or pull latest code using SSH
             if [ ! -d ".git" ]; then
-              git clone https://github.com/felixxavierdhasd/fastapi-gcp-ci-cd.git .
+              git clone git@github.com:felixxavierdhasd/fastapi-gcp-ci-cd.git .
             else
               git pull origin main
             fi
 
             # Set up Python virtual environment
             if [ ! -d "venv" ]; then
-              python3 -m venv venv
+              python3 -m venv venv || exit 1
             fi
-            source venv/bin/activate
+            source venv/bin/activate || exit 1
 
             # Install dependencies inside venv
             pip install --upgrade pip
-            pip install -r requirements.txt
+            pip install -r requirements.txt || exit 1
 
-            # Kill any existing uvicorn process
+            # Kill any existing uvicorn processes
             pkill -f uvicorn || true
 
-            # Start FastAPI with uvicorn in background
+            # Start FastAPI in background using nohup
             nohup venv/bin/uvicorn app.main:app \
               --host 0.0.0.0 \
               --port 8000 \
