@@ -23,8 +23,8 @@ jobs:
       - name: Get VM External IP
         id: get-ip
         run: |
-          EXTERNAL_IP=$(gcloud compute instances describe ${{ secrets.GCP_INSTANCE_NAME }} \
-            --zone=${{ secrets.GCP_ZONE }} \
+          EXTERNAL_IP=$(gcloud compute instances describe ${{ secrets.VM_NAME }} \
+            --zone=${{ secrets.VM_ZONE }} \
             --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
           echo "vm_ip=$EXTERNAL_IP" >> $GITHUB_OUTPUT
           echo "Retrieved VM IP: $EXTERNAL_IP"
