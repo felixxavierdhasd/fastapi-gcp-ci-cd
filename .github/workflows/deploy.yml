@@ -8,70 +8,43 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
-    steps:
-      # 1️⃣ Checkout repo (only needed for access to secrets/files if any)
+    steps:              # <-- steps is a list
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 2️⃣ Authenticate to GCP
-      - name: GCP Auth
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      # 3️⃣ Setup gcloud CLI
-      - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@v2
-        with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
-
-      # 4️⃣ Get VM external IP dynamically
-      - name: Get VM IP
-        id: vmip
-        run: |
-          IP=$(gcloud compute instances describe ${{ secrets.VM_NAME }} \
-            --zone ${{ secrets.VM_ZONE }} \
-            --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
-          echo "VM_IP=$IP" >> $GITHUB_ENV
-
-      # 5️⃣ Deploy FastAPI to VM via SSH
-      - name: Deploy to VM
+      - name: Deploy to VM        # <-- this - name: is valid because it’s inside steps
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ env.VM_IP }}
+          host: 34.19.77.229
           username: ${{ secrets.VM_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
           port: 22
           timeout: 30s
           command_timeout: 10m
+          proxy_port: 22
+          proxy_timeout: 30s
           script: |
-            # Ensure app directory exists
             mkdir -p ~/fastapi-demo-app
             cd ~/fastapi-demo-app || exit 1
 
-            # Clone or pull latest code using SSH
             if [ ! -d ".git" ]; then
-              git clone git@github.com:felixxavierdhasd/fastapi-gcp-ci-cd.git .
+              git init
+              git remote add origin git@github.com:felixxavierdhasd/fastapi-gcp-ci-cd.git
+              git fetch origin
+              git reset --hard origin/main
             else
-              git pull origin main
+              git fetch origin
+              git reset --hard origin/main
             fi
 
-            # Set up Python virtual environment
             if [ ! -d "venv" ]; then
               python3 -m venv venv || exit 1
             fi
             source venv/bin/activate || exit 1
 
-            # Install dependencies inside venv
             pip install --upgrade pip
             pip install -r requirements.txt || exit 1
 
-            # Kill any existing uvicorn processes
             pkill -f uvicorn || true
 
-            # Start FastAPI in background using nohup
-            nohup venv/bin/uvicorn app.main:app \
-              --host 0.0.0.0 \
-              --port 8000 \
-              > app.log 2>&1 &
+            nohup venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 > app.log 2>&1 &
