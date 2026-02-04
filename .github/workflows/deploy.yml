@@ -1,0 +1,58 @@
+name: Deploy FastAPI to GCP VM
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # 🔐 Authenticate to GCP
+      - name: GCP Auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      # 📡 Fetch VM External IP dynamically
+      - name: Get VM IP
+        id: vmip
+        run: |
+          IP=$(gcloud compute instances describe ${{ secrets.VM_NAME }} \
+            --zone ${{ secrets.VM_ZONE }} \
+            --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+          echo "VM_IP=$IP" >> $GITHUB_ENV
+
+      # 🚀 Deploy via SSH
+      - name: Deploy to VM
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.VM_IP }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            cd ~/fastapi-app || exit 1
+
+            if [ ! -d ".git" ]; then
+              git clone https://github.com/<your-username>/fastapi-gcp-ci-cd.git .
+            else
+              git pull origin main
+            fi
+
+            pip3 install --user -r requirements.txt
+            pkill -f uvicorn || true
+
+            nohup ~/.local/bin/uvicorn app.main:app \
+              --host 0.0.0.0 \
+              --port 8000 \
+              > app.log 2>&1 &
