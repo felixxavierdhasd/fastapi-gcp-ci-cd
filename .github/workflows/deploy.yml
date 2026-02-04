@@ -1,4 +1,4 @@
-name: Deploy FastAPI to GCP VM
+name: Deploy FastAPI to GCP
 
 on:
   push:
