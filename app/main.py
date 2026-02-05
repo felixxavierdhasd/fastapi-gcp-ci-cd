@@ -10,7 +10,7 @@ def read_root():
     <!DOCTYPE html>
     <html>
         <head>
-            <title>FastAPI on GCP</title>
+            <title>FastAPI on GCP DEMO</title>
             <style>
                 body {
                     font-family: Arial, sans-serif;
